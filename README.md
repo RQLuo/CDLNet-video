@@ -30,6 +30,9 @@ options (see `$ python analyze.py -h`).
 
 [website](https://nikopj.github.io/projects/dcdl), [supplementary material](https://nikopj.github.io/notes/cdlnet_supp)
 
+## Synthetic data is used for testing
+![animation](https://github.com/user-attachments/assets/ae2e4711-339b-4197-8eda-54fa4cd3d72b)
+
 ## Publications
 
 If you find this code/work useful, please cite us:
