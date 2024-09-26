@@ -33,6 +33,11 @@ options (see `$ python analyze.py -h`).
 ## Synthetic data is used for testing
 ![animation](https://github.com/user-attachments/assets/ae2e4711-339b-4197-8eda-54fa4cd3d72b)
 
+## Why?
+- It was very convenient and quick; I only spent half an hour writing the data generation code, which can directly produce a large amount of data, saving time on data collection and cleaning.
+- The 2D CDLNet may lose some details, so its performance on this synthetic data might not be very good. I expect the 3D CDLNet to address this issue.
+![image](https://github.com/user-attachments/assets/265429bb-503f-47b6-b86e-bd968d7ef755)
+
 ## Publications
 
 If you find this code/work useful, please cite us:
