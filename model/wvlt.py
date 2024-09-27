@@ -21,6 +21,33 @@ def filter_bank_2D(wname):
 	wa, ws = filter_bank_1D(wname)
 	Wa, Ws = nonsep(wa), nonsep(ws)
 	return Wa.transpose(0,1), Ws.transpose(0,1).flip(2,3)
+	
+def filter_bank_3D(wname):
+    """ Returns 3D wavelet filterbank.
+    Formed as outer product using return from filter_bank_1D
+    wname: wavelet name (from pywt)
+    Wa: analysis fb, 1 to n channels
+    Ws: synthesis fb. n to 1 channels
+    """
+    wa, ws = filter_bank_1D(wname)
+    Wa = nonsep3d(wa)
+    Ws = nonsep3d(ws).flip(-1, -2, -3)
+    return Wa.transpose(0,1), Ws.transpose(0,1)
+
+def nonsep3d(w):
+    """ Convert 1D filter bank into 3D non-separable filter bank.
+    """
+    # Expand 1D filters to 3D by outer product along depth, height, and width
+    w1 = torch.cat([w[:1], w[:1], w[1:], w[1:]])
+    w2 = torch.cat([w, w])
+    w3 = torch.cat([w, w])
+    W = outerprod3d(w1, w2, w3)[None, :].flip(2, 3, 4)
+    return W
+
+def outerprod3d(u, v, w):
+    """ Outer-product between vectors u, v, w to create 3D filters.
+    """
+    return torch.einsum('...i,...j,...k->...ijk', u, v, w)
 
 def outerprod(u,v):
 	""" Outer-product between vectors u, v
