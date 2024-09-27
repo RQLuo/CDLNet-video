@@ -27,3 +27,8 @@ def uball_project(W, dim=(2,3)):
     normW = torch.norm(W, dim=dim, keepdim=True)
     return W * torch.clamp(1/normW, max=1)
 
+def uball_project_3D(W, dim=(2,3,4)):
+    """ projection of W onto the unit ball for 3D convolutions
+    """
+    normW = torch.norm(W, dim=dim, keepdim=True)
+    return W * torch.clamp(1/normW, max=1)
