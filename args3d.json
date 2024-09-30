@@ -1,0 +1,43 @@
+{
+    "type": "CDLNetVideo",
+    "model": {
+        "adaptive": true,
+        "K": 20,
+        "M": 32,
+        "C": 1,
+        "P": 7,
+        "s": 1
+    },
+    "paths": {
+        "save": "trained_nets/CDLNetVideo-syn",
+        "ckpt": null
+    },
+    "train": {
+        "loaders": {
+            "trn_path_list": ["data_gen/data16/train"],
+            "val_path_list": ["data_gen/data16/val"],
+            "tst_path_list": ["data_gen/data16/test"],
+            "crop_size": 128,
+            "batch_size": 10,
+            "load_color": false
+        },
+        "opt": {
+            "lr": 1e-3
+        },
+        "sched": {
+            "step_size": 50,
+            "gamma": 0.95
+        },
+        "fit": {
+            "epochs": 100,
+            "clip_grad": 5e-2,
+            "noise_std": 20,
+            "backtrack_thresh": 2,
+            "demosaic": false,
+            "verbose": true,
+            "val_freq": 50,
+            "save_freq": 10,
+            "mcsure": false
+        }
+    }
+}

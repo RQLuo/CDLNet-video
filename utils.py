@@ -18,6 +18,14 @@ def gen_bayer_mask(x):
     m[:,2,1::2,1::2] = 1 # B
     return m
 
+def gen_bayer_mask3d(x):
+    m = torch.zeros_like(x)
+    m[:, :, :, 0::2, 0::2] = 1  # R
+    m[:, :, :, 0::2, 1::2] = 1  # G1
+    m[:, :, :, 1::2, 0::2] = 1  # G2
+    m[:, :, :, 1::2, 1::2] = 1  # B
+    return m
+
 def awgn(input, noise_std):
 	""" Additive White Gaussian Noise
 	y: clean input image
@@ -31,6 +39,21 @@ def awgn(input, noise_std):
 		sigma = noise_std[0] + \
 		       (noise_std[1] - noise_std[0])*torch.rand(len(input),1,1,1, device=input.device)
 	return input + torch.randn_like(input) * (sigma/255), sigma
+
+def awgn3d(input, noise_std):
+    """ Additive White Gaussian Noise
+    y: clean input image
+    noise_std: (tuple) noise_std of batch size N is uniformly sampled 
+               between noise_std[0] and noise_std[1]. Expected to be in interval
+               [0,255]
+    """
+    if not isinstance(noise_std, (list, tuple)):
+        sigma = noise_std
+    else:  # uniform sampling of sigma
+        sigma = noise_std[0] + \
+               (noise_std[1] - noise_std[0]) * torch.rand(len(input), 1, 1, 1, 1, device=input.device)
+    return input + torch.randn_like(input) * (sigma / 255), sigma
+
 
 def visplot(images,
 	        grid_shape=None,

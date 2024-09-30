@@ -72,8 +72,14 @@ def test(net, loader, noise_level=25, blind=False, device=torch.device('cpu')):
     dset_name = os.path.basename(os.path.dirname(loader.dataset.root_dirs[0]))
     fn = os.path.join(ARGS.save_dir, f"test_{dset_name}_{blind}.txt")
 
-    if not type(noise_level) in [range, list, tuple]:
+    if not isinstance(noise_level, (range, list, tuple)):
         noise_level = [noise_level]
+
+    if ARGS.save:
+        test_noise_dir = os.path.join(ARGS.save_dir, "test_noise")
+        test_output_dir = os.path.join(ARGS.save_dir, "test_output")
+        os.makedirs(test_noise_dir, exist_ok=True)
+        os.makedirs(test_output_dir, exist_ok=True)
 
     for sigma in noise_level:
         print(sigma)
@@ -83,25 +89,40 @@ def test(net, loader, noise_level=25, blind=False, device=torch.device('cpu')):
             x = x.to(device)
             mask = utils.gen_bayer_mask(x) if ARGS.demosaic else 1
             y, s = utils.awgn(x, sigma)
-            y = mask*y
+            y = mask * y
+
             if net.adaptive:
-                if blind is not None and blind is not False:
+                if blind:
                     s = 255 * model.nle.noise_level(y, method=blind)
-                    print(f"sigma_hat = {sigma.flatten().item():.3f}")
+                    print(f"sigma_hat = {s.flatten().item():.3f}")
                 else:
                     print(f"using GT sigma.")
             else:
                 s = None
+
             xhat, _ = net(y, s, mask=mask)
-            psnr = psnr + -10*np.log10(torch.mean((x-xhat)**2).item())
-        psnr = psnr / (itern+1)
+            psnr += -10 * np.log10(torch.mean((x - xhat) ** 2).item())
+
+            if ARGS.save:
+                y_clamped = torch.clamp(y, 0, 1)
+                xhat_clamped = torch.clamp(xhat, 0, 1)
+
+                img_index = itern + 1
+                y_filename = os.path.join(test_noise_dir, f"noise_{img_index:05d}.png")
+                xhat_filename = os.path.join(test_output_dir, f"output_{img_index:05d}.png")
+
+                save_image(y_clamped, y_filename)
+                save_image(xhat_clamped, xhat_filename)
+
+        psnr /= (itern + 1)
         print(f"PSNR = {psnr:.3f}")
 
-        with open(fn,'+a') as log_file:
+        with open(fn, 'a') as log_file:
             log_file.write(f"{sigma}, {psnr:.3f}\n")
 
     print(f"saved to file {fn}")
     print("done.")
+
 
 def thresholds(net, noise_level=25):
     print("--------- thresholds ---------")

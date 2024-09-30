@@ -18,6 +18,7 @@ network, defined in `model/net.py`. The option `args['model_type']` can be
 Once your args file is defined, training may be performed via
 ```
 $ python train.py path/to/args.json
+python train3d.py args3d.json
 ```
 
 Testing of the trained model is done via 
@@ -29,7 +30,6 @@ Additional analysis of trained models can be performed with other command-line
 options (see `$ python analyze.py -h`).
 
 [website](https://nikopj.github.io/projects/dcdl), [supplementary material](https://nikopj.github.io/notes/cdlnet_supp)
-
 
 ## Publications
 
