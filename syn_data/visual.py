@@ -6,8 +6,8 @@ from gen import gen_data
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation, PillowWriter
 
-x, y, num_frames = 128, 128, 128
-fig, axes = plt.subplots(3, 3, figsize=(16, 16))
+x, y, num_frames = 128, 128, 64
+fig, axes = plt.subplots(3, 3, figsize=(9, 9))
 
 ims = []
 data_list = []
@@ -24,8 +24,8 @@ def update(frame):
     for idx, im in enumerate(ims):
         im.set_array(data_list[idx][:, :, frame]) 
     return ims
-ani = FuncAnimation(fig, update, frames=range(num_frames), interval=5, blit=True)
+ani = FuncAnimation(fig, update, frames=range(num_frames), interval=15, blit=True)
 gif_name = f"animation.gif"
-writer = PillowWriter(fps=20)
+writer = PillowWriter(fps=10)
 ani.save(gif_name, writer=writer)
 plt.close()
