@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from model.solvers import power_method, uball_project
-from model.utils   import pre_process, post_process, calc_pad_2D, unpad
+from model.utils   import pre_process, post_process, calc_pad_2D, unpad, pre_process_3d, post_process_3d
 from model.gabor   import ConvAdjoint2dGabor
 
 def ST(x,t):
@@ -117,7 +117,7 @@ class CDLNetVideo(nn.Module):
                  t0=0,           # initial threshold
                  adaptive=False, # noise-adaptive thresholds
                  init=True):     # False -> use power-method for weight init
-        super(CDLNet, self).__init__()
+        super(CDLNetVideo, self).__init__()
         
         # -- OPERATOR INIT --
         self.A = nn.ModuleList([nn.Conv3d(C, M, P, stride=s, padding=(P-1)//2, bias=False) for _ in range(K)])
@@ -136,7 +136,7 @@ class CDLNetVideo(nn.Module):
             print("Running power-method on initial dictionary...")
             with torch.no_grad():
                 DDt = lambda x: self.D(self.A[0](x))
-                L = power_method(DDt, torch.rand(1, C, 5, 128, 128), num_iter=200, verbose=False)[0]
+                L = power_method(DDt, torch.rand(1, C, 16, 128, 128), num_iter=200, verbose=False)[0]
                 print(f"Done. L={L:.3e}.")
                 
                 if L < 0:
@@ -162,13 +162,13 @@ class CDLNetVideo(nn.Module):
         """
         self.t.clamp_(0.0)
         for k in range(self.K):
-            self.A[k].weight.data = uball_project(self.A[k].weight.data)
-            self.B[k].weight.data = uball_project(self.B[k].weight.data)
+            self.A[k].weight.data = uball_project(self.A[k].weight.data, dim=(2,3,4)) #onto the unit ball for 3D convolutions
+            self.B[k].weight.data = uball_project(self.B[k].weight.data, dim=(2,3,4))
 
     def forward(self, y, sigma=None, mask=1):
         """ LISTA + D w/ noise-adaptive thresholds
         """
-        yp, params, mask = pre_process(y, self.s, mask=mask)
+        yp, params, mask = pre_process_3d(y, self.s, mask=mask)
         
         # THRESHOLD SCALE-FACTOR c
         c = 0 if sigma is None or not self.adaptive else sigma / 255.0
@@ -180,13 +180,13 @@ class CDLNetVideo(nn.Module):
         
         # DICTIONARY SYNTHESIS
         xphat = self.D(z)
-        xhat = post_process(xphat, params)
+        xhat = post_process_3d(xphat, params)
         return xhat, z
 
     def forward_generator(self, y, sigma=None, mask=1):
         """ same as forward but yields intermediate sparse codes
         """
-        yp, params, mask = pre_process(y, self.s, mask=mask)
+        yp, params, mask = pre_process_3d(y, self.s, mask=mask)
         c = 0 if sigma is None or not self.adaptive else sigma / 255.0
         z = ST(self.A[0](yp), self.t[0, :1] + c * self.t[0, 1:2]); yield z
         for k in range(1, self.K):
@@ -357,4 +357,3 @@ class FFDNet(DnCNN):
 		xhatp = F.pixel_shuffle(z, 2)
 		xhat  = unpad(xhatp, pad)
 		return xhat, noise_map
-

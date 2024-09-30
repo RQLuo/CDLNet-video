@@ -67,3 +67,57 @@ def unpad(I, pad):
     else:
         return I[..., pad[2]:-pad[3], pad[0]:-pad[1]]
 
+def pre_process_3d(x, stride, mask=1):
+    """ 3D video preprocessing: stride-padding and mean subtraction.
+    """
+    params = []
+    # mean-subtract
+    if torch.is_tensor(mask):
+        xmean = x.sum(dim=(1,2,3,4), keepdim=True) / mask.sum(dim=(1,2,3,4), keepdim=True)
+    else:
+        xmean = x.mean(dim=(1,2,3,4), keepdim=True)
+    x = mask * (x - xmean)
+    params.append(xmean)
+    # pad signal for stride
+    pad = calc_pad_3D(*x.shape[2:], stride)
+    x = F.pad(x, pad, mode='reflect')
+    if torch.is_tensor(mask):
+        mask = F.pad(mask, pad, mode='reflect')
+    params.append(pad)
+    return x, params, mask
+
+def post_process_3d(x, params):
+    """ Undoes 3D video pre-processing given params
+    """
+    # unpad
+    pad = params.pop()
+    x = unpad_3d(x, pad)
+    # add mean
+    xmean = params.pop()
+    x = x + xmean
+    return x
+
+def calc_pad_3D(D, H, W, M):
+    """ Return pad sizes for 3D data (D, H, W) to be divided by size M
+    (D, H, W): input depth, height, width
+    output: (pad_left, pad_right, pad_top, pad_bottom, pad_front, pad_back)
+    """
+    pad_w = calc_pad_1D(W, M)
+    pad_h = calc_pad_1D(H, M)
+    pad_d = calc_pad_1D(D, M)
+    return (*pad_w, *pad_h, *pad_d)  # (pad_left, pad_right, pad_top, pad_bottom, pad_front, pad_back)
+
+def unpad_3d(I, pad):
+    """ Remove padding from 3D signal stack
+    pad: (pad_left, pad_right, pad_top, pad_bottom, pad_front, pad_back)
+    """
+    pad_left, pad_right, pad_top, pad_bottom, pad_front, pad_back = pad
+    if pad_back == 0 and pad_right > 0:
+        return I[..., pad_front:, pad_top:-pad_bottom, pad_left:-pad_right]
+    elif pad_back > 0 and pad_right == 0:
+        return I[..., pad_front:-pad_back, pad_top:, pad_left:]
+    elif pad_back == 0 and pad_right == 0:
+        return I[..., pad_front:, pad_top:, pad_left:]
+    else:
+        return I[..., pad_front:-pad_back, pad_top:-pad_bottom, pad_left:-pad_right]
+
