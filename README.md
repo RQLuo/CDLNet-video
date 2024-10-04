@@ -23,7 +23,7 @@ python train3d.py args3d.json
 
 Testing of the trained model is done via 
 ```
-$ python analyze.py path/to/args.json --test path/to/dataset/ --noise_level 25
+$ python analyze3d.py args3d.json --test gt_gray --noise_level 25 --save
 ```
 where the checkpoint referenced in `args['paths']['ckpt']` will be loaded.
 Additional analysis of trained models can be performed with other command-line

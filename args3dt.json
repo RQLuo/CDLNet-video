@@ -3,16 +3,16 @@
     "model": {
         "adaptive": true,
         "K": 30,
-        "M": 169,
+        "M": 64,
         "C": 1,
         "P": 7,
-        "s": 2,
+        "s": 1,
         "t0": 0,
         "init": true
     },
     "paths": {
-        "save": "trained_nets/CDLNetVideo-syn-maxmse",
-        "ckpt": "trained_nets/CDLNetVideo-syn-maxmse/net_epoch_480.ckpt"
+        "save": "trained_nets/CDLNetVideo-syns1",
+        "ckpt": "trained_nets/CDLNetVideo-syns1/net_epoch_340.ckpt"
     },
     "train": {
         "loaders": {
@@ -25,11 +25,11 @@
             "depth": 16
         },
         "opt": {
-            "lr": 1e-4
+            "lr": 5e-5
         },
         "sched": {
             "step_size": 10,
-            "gamma": 0.95
+            "gamma": 0.9
         },
         "fit": {
             "epochs": 5000,
