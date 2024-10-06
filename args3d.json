@@ -5,14 +5,14 @@
         "K": 30,
         "M": 169,
         "C": 1,
-        "P": 7,
+        "P": 5,
         "s": 2,
         "t0": 0,
         "init": true
     },
     "paths": {
-        "save": "trained_nets/CDLNetVideo-syn-maxmse",
-        "ckpt": "trained_nets/CDLNetVideo-syn-maxmse/net_epoch_480.ckpt"
+        "save": "trained_nets/CDLNetVideo",
+        "ckpt": null
     },
     "train": {
         "loaders": {
@@ -20,9 +20,12 @@
             "val_path_list": ["data_gen/davis/val"],
             "tst_path_list": ["data_gen/davis/test"],
             "crop_size": 128,
-            "batch_size": [1, 1, 1],
+            "batch_size": [2, 1, 1],
             "load_color": false,
-            "depth": 16
+            "depth": 16,
+            "crop_ratio": 0.9,   
+            "aug_prob": 0.5,    
+            "max_shift": 25
         },
         "opt": {
             "lr": 1e-4
@@ -33,7 +36,7 @@
         },
         "fit": {
             "epochs": 5000,
-            "noise_std": 25,
+            "noise_std": [20,30],
             "backtrack_thresh": 2,
             "demosaic": false,
             "verbose": true,

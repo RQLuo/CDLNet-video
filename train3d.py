@@ -45,6 +45,7 @@ def fit(net, opt, loaders,
         save_freq=1,
         epoch_fun=None,
         mcsure=False,
+        combmse=False,
         backtrack_thresh=1):
     """Train the network to fit the training data."""
     print(f"fit: Using device {device}")
@@ -60,7 +61,8 @@ def fit(net, opt, loaders,
 
     top_psnr = {"train": 0, "val": 0, "test": 0}  # For tracking the best PSNR values
     epoch = start_epoch
-
+    if combmse:
+        loss_fn = CombinedLossWithSSIM(alpha=1.0, beta=0.01, gamma=0.1).to(device)
     # Training loop
     while epoch < start_epoch + epochs:
         for phase in ['train', 'val', 'test']:
@@ -91,19 +93,18 @@ def fit(net, opt, loaders,
 
                 with torch.set_grad_enabled(phase == 'train'):  # Enable gradients if training
                     batch_hat, _ = net(noisy_batch, sigma_n)  # Forward pass
-
-                    # Calculate MSE per slice and take maximum across each element in the batch
-                    mse_values = []
-                    for i in range(batch.size(0)):  # Iterate over batch size
-                        mse_slices = [] 
-                        for j in range(batch.size(2)):  # Iterate over the second dimension (16 slices)
-                            mse_slice = torch.mean((batch[i, :, j, :, :] - batch_hat[i, :, j, :, :]) ** 2)
-                            mse_slices.append(mse_slice)
-                        max_mse = torch.max(torch.stack(mse_slices))  # Take the maximum MSE for this batch element
-                        mse_values.append(max_mse)
-
-                    # Average over batch size
-                    loss = torch.mean(torch.stack(mse_values))
+                    # supervised or unsupervised (MCSURE) loss during training
+                    if mcsure and phase == "train":
+                        h = 1e-3
+                        b = torch.randn_like(obsrv_batch)
+                        batch_hat_b, _ = net(obsrv_batch.clone() + h*b, sigma_n, mask=mask)
+                        # assume you have a good estimator for sigma_n
+                        div = 2.0*torch.mean(((sigma_n/255.0)**2)*b*(batch_hat_b-batch_hat)) / h
+                        loss = torch.mean((obsrv_batch - batch_hat)**2) + div
+                    elif combmse and phase == "train":
+                        loss = loss_fn(batch_hat, batch)
+                    else:    
+                        loss = torch.mean((batch - batch_hat)**2)
 
                     if phase == 'train':
                         loss.backward()  # Backpropagation
