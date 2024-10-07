@@ -5,7 +5,7 @@
         "K": 30,
         "M": 169,
         "C": 1,
-        "P": 5,
+        "P": 7,
         "s": 2,
         "t0": 0,
         "init": true
@@ -23,15 +23,15 @@
             "batch_size": [2, 1, 1],
             "load_color": false,
             "depth": 16,
-            "crop_ratio": 0.9,   
-            "aug_prob": 0.5,    
+            "crop_ratio": 0.95,   
+            "aug_prob": 0.9,    
             "max_shift": 25
         },
         "opt": {
-            "lr": 1e-4
+            "lr": 7e-5
         },
         "sched": {
-            "step_size": 10,
+            "step_size": 20,
             "gamma": 0.95
         },
         "fit": {
