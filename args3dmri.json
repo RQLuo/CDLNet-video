@@ -1,0 +1,45 @@
+{
+    "type": "CDLNetVideo",
+    "model": {
+        "adaptive": true,
+        "K": 30,
+        "M": 169,
+        "C": 1,
+        "P": 7,
+        "s": 2,
+        "t0": 0,
+        "init": true
+    },
+    "paths": {
+        "save": "trained_nets/CDLNetVideo-mri-base",
+        "ckpt": null
+    },
+    "train": {
+        "loaders": {
+            "trn_path_list": ["/vast/work/public/ml-datasets/fastmri/knee/singlecoil_train"],
+            "val_path_list": ["/vast/work/public/ml-datasets/fastmri/knee/singlecoil_val"],
+            "tst_path_list": ["/vast/work/public/ml-datasets/fastmri/knee/singlecoil_test_v2"],
+            "crop_size": 128,
+            "batch_size": [5, 1, 1],
+            "load_color": false,
+            "depth": 16
+        },
+        "opt": {
+            "lr": 7e-5
+        },
+        "sched": {
+            "step_size": 20,
+            "gamma": 0.95
+        },
+        "fit": {
+            "epochs": 5000,
+            "noise_std": [5,10],
+            "backtrack_thresh": 2,
+            "demosaic": false,
+            "verbose": true,
+            "val_freq": 50,
+            "save_freq": 10,
+            "mcsure": true
+        }
+    }
+}

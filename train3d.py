@@ -7,8 +7,9 @@ import numpy as np
 import torch
 import torch.nn as nn
 from model.net import CDLNetVideo  # Ensure the model is imported correctly
-from data3d import get_fit_loaders
-from utils import awgn3d  # Remove unused functions
+from datafastmri import get_fit_loaders
+from utils import awgn3d, gen_bayer_mask
+from loss import CombinedLossWithSSIM
 
 def main(args):
     """Load data, initialize the model, and train it based on the parameter dictionary."""
@@ -88,7 +89,9 @@ def fit(net, opt, loaders,
             # Iterate over batches
             for itern, batch in enumerate(t):
                 batch = batch.to(device)  # Move batch to the specified device
-                noisy_batch, sigma_n = awgn3d(batch, phase_nstd)  # Add noise to the batch
+                mask = gen_bayer_mask(batch) if demosaic else 1
+                noisy_batch, sigma_n = awgn3d(batch, phase_nstd)
+                obsrv_batch = mask * noisy_batch
                 opt.zero_grad()  # Clear gradients
 
                 with torch.set_grad_enabled(phase == 'train'):  # Enable gradients if training
