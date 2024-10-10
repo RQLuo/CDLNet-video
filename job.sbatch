@@ -6,7 +6,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --account=pr_198_general
 #SBATCH --mem=64GB
-#SBATCH --time=5:00:00
-#SBATCH --job-name=single_keen_mcsure_169_30_7_2_16
+#SBATCH --time=5:20:00
+#SBATCH --job-name=single_keen_mcsure_169_30_7_2_16_pd
 
 python train3d.py args3dmri.json
