@@ -12,7 +12,7 @@ from PIL import Image
 
 class FastMRIDataset(data.Dataset):
     def __init__(self, root_dirs, transform=None, load_color=False, depth=16, image_size=(128, 128), 
-                 test=False, crop_ratio=0.5):
+                 test=False, crop_ratio=0.5, PDFS=True):
         """
         Initialize the FastMRI dataset.
 
@@ -24,21 +24,35 @@ class FastMRIDataset(data.Dataset):
             image_size (tuple): Size of the cropping window (width, height).
             test (bool): Whether the dataset is for testing.
             crop_ratio (float): Probability of applying cropping (only cropping is retained here, so this parameter is not used).
+            PDFS (bool): If False, only include H5 files with acquisition == 'CORPD_FBK'.
         """
         self.h5_files = []
         for cur_path in root_dirs:
-            # Get all H5 files in the directory
             files = [path.join(cur_path, file) for file in listdir(cur_path) 
                      if file.lower().endswith('.h5')]
-            self.h5_files += files
+            
+            if not PDFS:
+                filtered_files = []
+                for file in files:
+                    try:
+                        with h5py.File(file, 'r') as hf:
+                            attrs = dict(hf.attrs)
+                            if attrs.get('acquisition') == 'CORPD_FBK':
+                                filtered_files.append(file)
+                    except Exception as e:
+                        print(f"Error reading {file}: {e}")
+                self.h5_files += filtered_files
+            else:
+                self.h5_files += files
         
-        print(f"Loading H5 files from {root_dirs}: {len(self.h5_files)} files found.")
+        print(f"Loading H5 files from {root_dirs}: {len(self.h5_files)} files found. PDFS={PDFS}")
         self.depth = depth
         self.load_color = load_color
         self.transform = transform
         self.image_size = image_size
         self.test = test
         self.crop_ratio = crop_ratio  # Only retain cropping
+        self.PDFS = PDFS
     
     def __len__(self):
         return len(self.h5_files)
@@ -109,7 +123,7 @@ class FastMRIDataset(data.Dataset):
         return video_tensor
 
 
-def get_fastmri_data_loader(dir_list, batch_size=1, load_color=False, crop_size=128, test=True, depth=16):
+def get_fastmri_data_loader(dir_list, batch_size=1, load_color=False, crop_size=128, test=True, depth=16, PDFS=True):
     """
     Create a DataLoader for the FastMRI dataset.
 
@@ -120,6 +134,7 @@ def get_fastmri_data_loader(dir_list, batch_size=1, load_color=False, crop_size=
         crop_size (int): Size to crop the images.
         test (bool): Whether the DataLoader is for testing.
         depth (int): Number of consecutive slices per sample.
+        PDFS (bool): If False, only include H5 files with acquisition == 'CORPD_FBK'.
 
     Returns:
         DataLoader: PyTorch DataLoader.
@@ -139,7 +154,8 @@ def get_fastmri_data_loader(dir_list, batch_size=1, load_color=False, crop_size=
             depth=depth, 
             image_size=(crop_size, crop_size), 
             test=test,
-            crop_ratio=0.5  # Although only cropping is performed here
+            crop_ratio=0.5,  # Although only cropping is performed here
+            PDFS=PDFS
         ),
         batch_size=batch_size,
         drop_last=(not test),
@@ -153,7 +169,8 @@ def get_fit_loaders(trn_path_list=['data_gen/data16/train'],
                    crop_size=128,
                    batch_size=[10, 1, 1],
                    load_color=False,
-                   depth=16):
+                   depth=16,
+                   PDFS=True):
     """
     Create DataLoaders for training, validation, and testing.
 
@@ -165,6 +182,7 @@ def get_fit_loaders(trn_path_list=['data_gen/data16/train'],
         batch_size (list or int): Batch sizes for training, validation, and testing.
         load_color (bool): Whether to load color images.
         depth (int): Number of consecutive slices per sample.
+        PDFS (bool): If False, only include H5 files with acquisition == 'CORPD_FBK'.
 
     Returns:
         dict: Dictionary containing 'train', 'val', and 'test' DataLoaders.
@@ -179,7 +197,8 @@ def get_fit_loaders(trn_path_list=['data_gen/data16/train'],
             load_color=load_color, 
             crop_size=crop_size, 
             test=False,
-            depth=depth
+            depth=depth,
+            PDFS=PDFS
         ),
         'val': get_fastmri_data_loader(
             val_path_list, 
@@ -187,7 +206,8 @@ def get_fit_loaders(trn_path_list=['data_gen/data16/train'],
             load_color=load_color, 
             crop_size=crop_size, 
             test=True,  # Validation typically uses the test setting
-            depth=depth
+            depth=depth,
+            PDFS=PDFS
         ),
         'test': get_fastmri_data_loader(
             tst_path_list, 
@@ -195,7 +215,8 @@ def get_fit_loaders(trn_path_list=['data_gen/data16/train'],
             load_color=load_color, 
             crop_size=crop_size, 
             test=True,
-            depth=depth
+            depth=depth,
+            PDFS=PDFS
         )
     }
     return dataloaders
