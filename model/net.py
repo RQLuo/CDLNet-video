@@ -32,8 +32,8 @@ class CDLNet(nn.Module):
         self.A = nn.ModuleList([nn.Conv2d(C, M, P, stride=s, padding=(P-1)//2, bias=False)  for _ in range(K)])
         self.B = nn.ModuleList([nn.ConvTranspose2d(M, C, P, stride=s, padding=(P-1)//2, output_padding=s-1, bias=False) for _ in range(K)])
         self.D = self.B[0]                              # alias D to B[0], otherwise unused as z0 is zero
-        self.t = nn.Parameter(t0*torch.ones(K,2,M,1,1)) # learned thresholds
-
+        self.t = nn.Parameter(t0*torch.ones(K,2,M,1,1)) # 1st num layer, 2nd t_0 + t_1 _sighat, 3rd channel dim, 4th and 5th boardcast
+        self.g = nn.Parameter(t0*torch.ones(K,2,M,1,1))
         # set weights 
         W = torch.randn(M, C, P, P)
         for k in range(K):
@@ -103,30 +103,56 @@ class CDLNet(nn.Module):
         xphat = self.D(z)
         xhat  = post_process(xphat, params)
         yield xhat
+class ResidualBlock(nn.Module):
+    """A basic residual block with two convolutional layers and a skip connection."""
+    def __init__(self, in_channels, out_channels, kernel_size=(3, 3, 3), stride=1, padding=1):
+        super(ResidualBlock, self).__init__()
+        self.conv1 = nn.Conv3d(in_channels, out_channels, kernel_size, stride=stride, padding=padding, bias=False)
+        self.relu = nn.ReLU(inplace=True)
+        self.conv2 = nn.Conv3d(out_channels, out_channels, kernel_size, stride=stride, padding=padding, bias=False)
 
+    def forward(self, x):
+        identity = x  # Store input for the skip connection
+        out = self.conv1(x)
+        out = self.relu(out)
+        out = self.conv2(out)
+        out += identity  # Add skip connection
+        out = self.relu(out)
+        return out
 class CDLNetVideo(nn.Module):
-    """ Convolutional Dictionary Learning Network for Video Denoising:
-    Interpretable denoising DNN with adaptive thresholds for robustness.
-    """
+    """ Convolutional Dictionary Learning Network for Video Denoising with Residual Blocks"""
     def __init__(self,
                  K=3,            # num. unrollings
                  M=64,           # num. filters in each filter bank operation
-                 P=7,            # cubic filter side length
+                 P=(7, 7, 5),    # filter dimensions [height, width, depth]
                  s=1,            # stride of convolutions
                  C=1,            # num. input channels
                  t0=0,           # initial threshold
-                 adaptive=False, # noise-adaptive thresholds
-                 init=True):     # False -> use power-method for weight init
+                 adaptive=False,
+                 depth=3,
+                 init=True,
+                 residual=False):  # Add residual argument to toggle residual blocks
         super(CDLNetVideo, self).__init__()
         
         # -- OPERATOR INIT --
-        self.A = nn.ModuleList([nn.Conv3d(C, M, P, stride=s, padding=(P-1)//2, bias=False) for _ in range(K)])
-        self.B = nn.ModuleList([nn.ConvTranspose3d(M, C, P, stride=s, padding=(P-1)//2, output_padding=s-1, bias=False) for _ in range(K)])
-        self.D = self.B[0]                              # alias D to B[0], otherwise unused as z0 is zero
+        self.A = nn.ModuleList([
+            nn.Conv3d(C, M, P, stride=s, padding=(P[0]//2, P[1]//2, P[2]//2), bias=False) for _ in range(K)
+        ])
+        self.B = nn.ModuleList([
+            nn.ConvTranspose3d(M, C, P, stride=s, padding=(P[0]//2, P[1]//2, P[2]//2), output_padding=s-1, bias=False) for _ in range(K)
+        ])
+        self.D = self.B[0]  # alias D to B[0], otherwise unused as z0 is zero
         self.t = nn.Parameter(t0 * torch.ones(K, 2, M, 1, 1, 1)) # learned thresholds (added one more dimension)
         
-        # set weights 
-        W = torch.randn(M, C, P, P, P)
+        # Residual blocks after each analysis convolution (if residual is True)
+        self.residual = residual
+        if self.residual:
+            self.residual_blocks = nn.ModuleList([
+                ResidualBlock(M, M) for _ in range(K)
+            ])
+        
+        # set weights
+        W = torch.randn(M, C, P[0], P[1], P[2])  # match new kernel size
         for k in range(K):
             self.A[k].weight.data = W.clone()
             self.B[k].weight.data = W.clone()
@@ -136,14 +162,14 @@ class CDLNetVideo(nn.Module):
             print("Running power-method on initial dictionary...")
             with torch.no_grad():
                 DDt = lambda x: self.D(self.A[0](x))
-                L = power_method(DDt, torch.rand(1, C, 16, 128, 128), num_iter=200, verbose=False)[0]
+                L = power_method(DDt, torch.rand(1, C, depth, 128, 128), num_iter=200, verbose=False)[0]
                 print(f"Done. L={L:.3e}.")
                 
                 if L < 0:
                     print("STOP: something is very very wrong...")
                     sys.exit()
                 
-            # spectral normalization (note: D is alised to B[0])
+            # spectral normalization (note: D is aliased to B[0])
             for k in range(K):
                 self.A[k].weight.data /= np.sqrt(L)
                 self.B[k].weight.data /= np.sqrt(L)
@@ -158,25 +184,28 @@ class CDLNetVideo(nn.Module):
 
     @torch.no_grad()
     def project(self):
-        """ \ell_2 ball projection for filters, R_+ projection for thresholds
-        """
+        """ \ell_2 ball projection for filters, R_+ projection for thresholds """
         self.t.clamp_(0.0)
         for k in range(self.K):
             self.A[k].weight.data = uball_project(self.A[k].weight.data, dim=(2,3,4)) #onto the unit ball for 3D convolutions
             self.B[k].weight.data = uball_project(self.B[k].weight.data, dim=(2,3,4))
 
     def forward(self, y, sigma=None, mask=1):
-        """ LISTA + D w/ noise-adaptive thresholds
-        """
+        """ LISTA + D w/ noise-adaptive thresholds """
         yp, params, mask = pre_process_3d(y, self.s, mask=mask)
         
         # THRESHOLD SCALE-FACTOR c
         c = 0 if sigma is None or not self.adaptive else sigma / 255.0
         
-        # LISTA
+        # LISTA with optional Residual Blocks
         z = ST(self.A[0](yp), self.t[0, :1] + c * self.t[0, 1:2])
+        if self.residual:
+            z = self.residual_blocks[0](z)  # Apply residual block after first convolution
+        
         for k in range(1, self.K):
             z = ST(z - self.A[k](mask * self.B[k](z) - yp), self.t[k, :1] + c * self.t[k, 1:2])
+            if self.residual:
+                z = self.residual_blocks[k](z)  # Apply residual block after each convolution
         
         # DICTIONARY SYNTHESIS
         xphat = self.D(z)
@@ -184,16 +213,148 @@ class CDLNetVideo(nn.Module):
         return xhat, z
 
     def forward_generator(self, y, sigma=None, mask=1):
-        """ same as forward but yields intermediate sparse codes
-        """
+        """ same as forward but yields intermediate sparse codes """
         yp, params, mask = pre_process_3d(y, self.s, mask=mask)
         c = 0 if sigma is None or not self.adaptive else sigma / 255.0
         z = ST(self.A[0](yp), self.t[0, :1] + c * self.t[0, 1:2]); yield z
+        if self.residual:
+            z = self.residual_blocks[0](z)
         for k in range(1, self.K):
             z = ST(z - self.A[k](mask * self.B[k](z) - yp), self.t[k, :1] + c * self.t[k, 1:2]); yield z
+            if self.residual:
+                z = self.residual_blocks[k](z)
         xphat = self.D(z)
         xhat = post_process(xphat, params)
         yield xhat
+
+def prox_CSR(u, z_prev, lambd, gamma):
+    """
+    Proximal operator of the CSR penalty using soft-thresholding.
+
+    Parameters:
+        u (torch.Tensor): Current tensor.
+        z_prev (torch.Tensor): Previous frame's tensor.
+        lambd (torch.Tensor): Outer threshold.
+        gamma (torch.Tensor): Inner threshold.
+
+    Returns:
+        torch.Tensor: Result after applying the proximal operator.
+    """
+    return ST(ST(u - z_prev - lambd * torch.sign(z_prev), lambd * gamma) + z_prev + lambd * torch.sign(z_prev), lambd)
+def prox_CSR_f2(u, z_prev, z_after, lambd, gamma1, gamma2):
+    """
+    Proximal operator of the CSR penalty using soft-thresholding.
+
+    Parameters:
+        u (torch.Tensor): Current tensor.
+        z_prev (torch.Tensor): Previous frame's tensor.
+        lambd (torch.Tensor): Outer threshold.
+        gamma (torch.Tensor): Inner threshold.
+
+    Returns:
+        torch.Tensor: Result after applying the proximal operator.
+    """
+    return ST(ST(u - z_prev - lambd * torch.sign(z_prev), gamma) + z_prev + lambd * torch.sign(z_prev), lambd)
+
+class CDLNet_CSR(nn.Module):
+    """ Convolutional Dictionary Learning Network:
+    Interpretable denoising DNN with adaptive thresholds for robustness.
+    """
+    def __init__(self,
+                 K=3,            # num. unrollings
+                 M=64,           # num. filters in each filter bank operation
+                 P=7,            # square filter side length
+                 s=1,            # stride of convolutions
+                 C=1,            # num. input channels
+                 t0=0,           # initial threshold
+                 adaptive=False, # noise-adaptive thresholds
+                 init=True):     # False -> use power-method for weight init
+        super(CDLNet_CSR, self).__init__()
+        
+        # -- OPERATOR INIT --
+        self.A = nn.ModuleList([nn.Conv2d(C, M, P, stride=s, padding=(P-1)//2, bias=False) for _ in range(K)])
+        self.B = nn.ModuleList([nn.ConvTranspose2d(M, C, P, stride=s, padding=(P-1)//2, output_padding=s-1, bias=False) for _ in range(K)])
+        self.D = self.B[0]  # alias D to B[0], otherwise unused as z0 is zero
+        self.t = nn.Parameter(t0 * torch.ones(K, 2, M, 1, 1))  # learned thresholds
+        self.g = nn.Parameter(t0 * torch.ones(K,2,M,1,1))
+        # set weights 
+        W = torch.randn(M, C, P, P)
+        for k in range(K):
+            self.A[k].weight.data = W.clone()
+            self.B[k].weight.data = W.clone()
+        
+        # Don't bother running code if initializing trained model from state-dict
+        if init:
+            print("Running power-method on initial dictionary...")
+            with torch.no_grad():
+                DDt = lambda x: self.D(self.A[0](x))
+                L = power_method(DDt, torch.rand(1, C, 128, 128), num_iter=200, verbose=False)[0]
+                print(f"Done. L={L:.3e}.")
+                
+                if L < 0:
+                    print("STOP: something is very very wrong...")
+                    sys.exit()
+            
+            # spectral normalization (note: D is aliased to B[0])
+            for k in range(K):
+                self.A[k].weight.data /= np.sqrt(L)
+                self.B[k].weight.data /= np.sqrt(L)
+        
+        # set parameters
+        self.K = K
+        self.M = M
+        self.P = P
+        self.s = s
+        self.t0 = t0
+        self.adaptive = adaptive
+
+    @torch.no_grad()
+    def project(self):
+        """ \ell_2 ball projection for filters, R_+ projection for thresholds """
+        self.t.clamp_(0.0) 
+        for k in range(self.K):
+            self.A[k].weight.data = uball_project(self.A[k].weight.data)
+            self.B[k].weight.data = uball_project(self.B[k].weight.data)
+
+    def forward(self, y, z_prev=None, sigma=None, mask=1):
+        """
+        LISTA + D with temporal information for 3D denoising.
+
+        Parameters:
+            y (torch.Tensor): Noisy input.
+            z_prev (torch.Tensor, optional): Previous frame's sparse code. Defaults to None.
+            sigma (float, optional): Noise level. Defaults to None.
+            mask (torch.Tensor, optional): Mask for convolutions. Defaults to 1.
+
+        Returns:
+            tuple: (Denoised output, Current sparse code)
+        """ 
+        yp, params, mask = pre_process(y, self.s, mask=mask)
+
+        # THRESHOLD SCALE-FACTOR c
+        c = 0 if sigma is None or not self.adaptive else sigma / 255.0
+
+        # Initialize z
+        if z_prev is None:
+            z = ST(self.A[0](yp), self.t[0, :1] + c * self.t[0, 1:2])
+        else:
+            # Incorporate temporal information using Prox_CSR for the first iteration if needed
+            z = prox_CSR(self.A[0](yp), z_prev, self.t[0, :1] + c * self.t[0, 1:2], self.g[0, :1] + c * self.g[0, 1:2])
+
+        # Iterative updates
+        for k in range(1, self.K):
+            # Gradient descent step
+            u = z - self.A[k](mask * self.B[k](z) - yp)
+            if z_prev is not None:
+                z = prox_CSR(u, z_prev, self.t[k, :1] + c * self.t[k, 1:2], self.g[k, :1] + c * self.g[k, 1:2])
+            else:
+                # Spatial proximal operator without temporal information
+                z = ST(u, self.t[k, :1] + c * self.t[k, 1:2])
+
+        # DICTIONARY SYNTHESIS
+        xphat = self.D(z)
+        xhat = post_process(xphat, params)
+        return xhat, z
 
 class GDLNet(nn.Module):
     """ Gabor Dictionary Learning Network:
