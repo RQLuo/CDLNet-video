@@ -99,3 +99,9 @@ def visplot(images,
 			if (titles is not None) and (ind < len(titles)):
 				axs[ii,jj].set_title(titles[ind])
 	return fig
+
+def async_prefetch_to_gpu(batch, non_blocking=True):
+    if isinstance(batch, (list, tuple)):
+        return [async_prefetch_to_gpu(b, non_blocking=non_blocking) for b in batch]
+    return batch.to(device="cuda", non_blocking=non_blocking)
+   

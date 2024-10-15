@@ -5,16 +5,14 @@
         "K": 30,
         "M": 169,
         "C": 1,
-        "P": [9, 9, 5],
+        "P": 9,
         "s": 2,
         "t0": 0,
-        "depth": 16,
-        "init": false,
-        "residual": false
+        "init": true
     },
     "paths": {
-        "save": "trained_nets/CDLNetVideo-mri",
-        "ckpt": "trained_nets/CDLNetVideo-mri/net_epoch_400.ckpt"
+        "save": "trained_nets/CDLNetVideo-mri-csr",
+        "ckpt": null
     },
     "train": {
         "loaders": {
@@ -22,9 +20,9 @@
             "val_path_list": ["D:/Downloads/knee_singlecoil_train/singlecoil_train"],
             "tst_path_list": ["D:/Downloads/knee_singlecoil_train/singlecoil_train"],
             "crop_size": 128,
-            "batch_size": [1, 1, 1],
+            "batch_size": [3, 1, 1],
             "load_color": false,
-            "depth": 30,
+            "depth": 2,
             "PDFS": false
         },
         "opt": {
@@ -36,13 +34,10 @@
         },
         "fit": {
             "epochs": 50,
-            "noise_std": [5,10,15,20,25,30,35,40,45,50],
-            "backtrack_thresh": 2,
-            "demosaic": false,
+            "noise_std": [20,30],
             "verbose": true,
             "val_freq": 50,
-            "save_freq": 1,
-            "mcsure": false
+            "save_freq": 1
         }
     }
 }
