@@ -35,7 +35,6 @@ parser.add_argument("--filters", action="store_true", help="Save network A,B fil
 parser.add_argument("--save_dir", type=str, help="Where to save analyze results.", default=None)
 parser.add_argument("--color", action="store_true", help="Use color images.")
 parser.add_argument("--demosaic", action="store_true", help="Demosaicing problem.")
-parser.add_argument("--type_net", type=str, help="csr/3d", default="3d")
 
 ARGS = parser.parse_args()
 
@@ -44,11 +43,9 @@ def main(model_args):
     device = torch.device("cuda:0" if ngpu > 0 else "cpu")
     print(f"Using device {device}.")
 
-    # Initialize the 3D model
-    if ARGS.type_net == 'csr':
-        net, _, _, epoch0 = traincsr.init_model(model_args, device=device)
-    else:
-        net, _, _, epoch0 = train3d.init_model(model_args, device=device)
+
+    net, _, _, epoch0, model_type = traincsr.init_model(model_args, device=device)
+
     net.eval()
 
     # Set save directory
@@ -157,6 +154,60 @@ def csr_inference_loop(net, batch, n_frames, device, ARGS, sigma, blind):
         # Update the variables for the next iteration
         prev_frame_hat = next_denoised
     return results, noisy_video
+import torch
+from torch import nn
+from collections import defaultdict
+
+def csr_inference_v2(net, batch, n_frames, device, ARGS, sigma, blind):
+    B, C, D, H, W = batch.shape
+    z_prev_list = [None] * n_frames
+    z_after_list = [None] * n_frames
+    noisy_video = [None] * n_frames
+    mask_list = [1] * n_frames
+    z_prev = None
+    for t in range(n_frames):
+        frame = batch[:, :, t, :, :].to(device)
+        mask = utils.gen_bayer_mask(frame) if ARGS.demosaic else 1
+        mask_list[t] = mask
+        
+        frame_hat, sigma_n = utils.awgn(frame, sigma)
+        noisy_video[t] = frame_hat.clone()
+        
+        frame_hat = mask * frame_hat
+        sigma_n = adapt(sigma_n, net, blind)
+        
+        denoised, z_prev = net(frame_hat, z_prev, None, sigma_n)
+        z_prev_list[t] = z_prev
+    
+    z_after = None
+    for t in reversed(range(n_frames)):
+        frame = batch[:, :, t, :, :].to(device)
+        mask = mask_list[t]
+        frame_hat, sigma_n = utils.awgn(frame, sigma)
+        frame_hat = mask * frame_hat
+        
+        sigma_n = adapt(sigma_n, net, blind)
+        
+        denoised, z_after = net(frame_hat, z_prev_list[t], z_after, sigma_n)
+        z_after_list[t] = z_after
+
+    final_results = []
+    for t in range(n_frames):
+        frame = batch[:, :, t, :, :].to(device)
+        
+        mask = mask_list[t]
+        
+        frame_hat, sigma_n = utils.awgn(frame, sigma)
+        
+        frame_hat = mask * frame_hat
+        
+        sigma_n = adapt(sigma_n, net, blind)
+        
+        denoised, _ = net(frame_hat, z_prev_list[t], z_after_list[t], sigma_n)
+        final_results.append(denoised)
+    
+    return final_results, noisy_video 
+
 
 def test(net, loader, noise_level=25, blind=False, device=torch.device('cpu')):
     """ Evaluate net on test-set with 3D video data.
@@ -189,12 +240,17 @@ def test(net, loader, noise_level=25, blind=False, device=torch.device('cpu')):
             video = video.to(device)  # Shape: (B, C, D, H, W)
             B, C, D, H, W = video.shape
 
-            if ARGS.type_net == 'csr':
+            if model_args['type'] == 'CDLNet_CSR':
                 # CSR inference loop using the modified inference code
-                n_frames = D  # Use all frames in the video
+                n_frames = D
                 results, noisy_video = csr_inference_loop(net, video, n_frames, device, ARGS, sigma, blind)
                 
                 # Convert list of results to a tensor with the same shape as `video`
+                denoised_video = torch.stack(results, dim=2)
+                noisy_video = torch.stack(noisy_video, dim=2)
+            elif model_args['type'] == 'CDLNet_CSRf2':
+                n_frames = D
+                results, noisy_video = csr_inference_v2(net, video, n_frames, device, ARGS, sigma, blind)
                 denoised_video = torch.stack(results, dim=2)
                 noisy_video = torch.stack(noisy_video, dim=2)
             else:

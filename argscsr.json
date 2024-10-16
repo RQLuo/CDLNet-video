@@ -1,5 +1,5 @@
 {
-    "type": "CDLNetVideo",
+    "type": "CDLNet_CSRf2",
     "model": {
         "adaptive": true,
         "K": 30,
@@ -12,7 +12,7 @@
     },
     "paths": {
         "save": "trained_nets/CDLNetVideo-mri-csr",
-        "ckpt": null
+        "ckpt": "trained_nets/CDLNetVideo-mri/net_epoch_300.ckpt"
     },
     "train": {
         "loaders": {
@@ -20,9 +20,9 @@
             "val_path_list": ["D:/Downloads/knee_singlecoil_train/singlecoil_train"],
             "tst_path_list": ["D:/Downloads/knee_singlecoil_train/singlecoil_train"],
             "crop_size": 128,
-            "batch_size": [3, 1, 1],
+            "batch_size": [1, 1, 1],
             "load_color": false,
-            "depth": 2,
+            "depth": 3,
             "PDFS": false
         },
         "opt": {
