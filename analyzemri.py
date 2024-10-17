@@ -110,7 +110,7 @@ def csr_inference_loop(net, batch, n_frames, device, ARGS, sigma, blind):
     # Add AWGN noise to the frames
     prev_frame_hat, sigma_n_1 = utils.awgn(prev_frame, sigma)
     curr_frame_hat, sigma_n_2 = utils.awgn(curr_frame, sigma)
-
+    noisy_video = [prev_frame_hat]
     # Apply mask
     prev_frame_hat = mask * prev_frame_hat
     curr_frame_hat = mask * curr_frame_hat
@@ -130,7 +130,7 @@ def csr_inference_loop(net, batch, n_frames, device, ARGS, sigma, blind):
 
     # Perform inference for the remaining frames
     results = [prev_reconstructed]  # Store the first reconstructed frame
-    noisy_video = [prev_frame_hat]
+    
     for t in range(1, n_frames):
         # Extract the next frame from the batch
         next_frame = batch[:, :, t, :, :].to(device)
@@ -160,52 +160,25 @@ from collections import defaultdict
 
 def csr_inference_v2(net, batch, n_frames, device, ARGS, sigma, blind):
     B, C, D, H, W = batch.shape
-    z_prev_list = [None] * n_frames
-    z_after_list = [None] * n_frames
+    z_prev_list = [None] * (n_frames+2)
     noisy_video = [None] * n_frames
     mask_list = [1] * n_frames
-    z_prev = None
+    final_results = []
+
     for t in range(n_frames):
         frame = batch[:, :, t, :, :].to(device)
-        mask = utils.gen_bayer_mask(frame) if ARGS.demosaic else 1
-        mask_list[t] = mask
-        
         frame_hat, sigma_n = utils.awgn(frame, sigma)
         noisy_video[t] = frame_hat.clone()
-        
-        frame_hat = mask * frame_hat
-        sigma_n = adapt(sigma_n, net, blind)
-        
-        denoised, z_prev = net(frame_hat, z_prev, None, sigma_n)
-        z_prev_list[t] = z_prev
-    
-    z_after = None
-    for t in reversed(range(n_frames)):
-        frame = batch[:, :, t, :, :].to(device)
-        mask = mask_list[t]
-        frame_hat, sigma_n = utils.awgn(frame, sigma)
-        frame_hat = mask * frame_hat
-        
-        sigma_n = adapt(sigma_n, net, blind)
-        
-        denoised, z_after = net(frame_hat, z_prev_list[t], z_after, sigma_n)
-        z_after_list[t] = z_after
-
-    final_results = []
+        denoised, z_prev = net(frame_hat, z_prev_list[t], None, sigma)
+        z_prev_list[t+1] = z_prev
+#    z_after = None
+#    for t in reversed(range(n_frames)):
+#        frame = batch[:, :, t, :, :].to(device)
+#        denoised, z_after = net(frame_hat, z_prev_list[t], z_after, sigma)
+#        z_after_list[t] = z_after
     for t in range(n_frames):
-        frame = batch[:, :, t, :, :].to(device)
-        
-        mask = mask_list[t]
-        
-        frame_hat, sigma_n = utils.awgn(frame, sigma)
-        
-        frame_hat = mask * frame_hat
-        
-        sigma_n = adapt(sigma_n, net, blind)
-        
-        denoised, _ = net(frame_hat, z_prev_list[t], z_after_list[t], sigma_n)
+        denoised, _ = net(noisy_video[t], z_prev_list[t], z_prev_list[t+1], sigma)
         final_results.append(denoised)
-    
     return final_results, noisy_video 
 
 
@@ -253,6 +226,13 @@ def test(net, loader, noise_level=25, blind=False, device=torch.device('cpu')):
                 results, noisy_video = csr_inference_v2(net, video, n_frames, device, ARGS, sigma, blind)
                 denoised_video = torch.stack(results, dim=2)
                 noisy_video = torch.stack(noisy_video, dim=2)
+            elif model_args['type'] in ["CDLNet", "GDLNet", "DnCNN", "FFDNet"]:
+                video = video.permute(2, 1, 3, 4, 0).squeeze(-1)
+                noisy_video, sigma_n = utils.awgn(video, sigma)
+                denoised_video, _ = net(noisy_video, sigma_n)
+                denoised_video = denoised_video.unsqueeze(-1).permute(4, 1, 0, 2, 3)
+                video = video.unsqueeze(-1).permute(4, 1, 0, 2, 3)
+                noisy_video = noisy_video.unsqueeze(-1).permute(4, 1, 0, 2, 3)
             else:
                 # Generate Bayer mask if demosaicing, else use mask=1
                 mask = utils.gen_bayer_mask3d(video) if ARGS.demosaic else 1
@@ -264,10 +244,10 @@ def test(net, loader, noise_level=25, blind=False, device=torch.device('cpu')):
                 noisy_video = mask * noisy_video
                 s = adapt(s, net, blind)
                 # Denoise the video
-                denoised_video, _ = net(noisy_video, s, mask=mask)
+                denoised_video, _ = net(noisy_video, s)
 
             # Calculate PSNR for each frame and accumulate
-            mse = torch.mean((video - denoised_video) ** 2, dim=[1, 2, 3, 4])  # MSE per video in batch
+            mse = torch.mean((video - denoised_video) ** 2)  # MSE per video in batch
             psnr = -10 * torch.log10(mse).mean().item()
             psnr_total += psnr
 

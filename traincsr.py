@@ -254,13 +254,11 @@ def train_model(
         opt.zero_grad()
 
         with torch.set_grad_enabled(phase == 'train'):
-            z_prev, z_after = None, None  # No previous hidden state for the first frame
-            prev_denoised, z_prev = net(prev_frame_hat, z_prev, z_after, sigma_n_1)
+            prev_denoised, z_prev = net(prev_frame_hat, None, None, sigma_n_1)
+            curr_denoised, z_curr = net(curr_frame_hat, z_prev, None, sigma_n_2)
+            after_denoised, z_after = net(after_denoised, z_prev, None, sigma_n_3)
             curr_denoised, z_curr = net(curr_frame_hat, z_prev, z_after, sigma_n_2)
-            after_denoised, z_after = net(curr_frame_hat, z_prev, z_after, sigma_n_3)
-            curr_denoised, z_curr = net(curr_frame_hat, z_prev, z_after, sigma_n_2)
-            prev_denoised, z_prev = net(prev_frame_hat, z_prev, z_after, sigma_n_1)
-            # MCSURE is not implemented for CDLNet_CSR; use supervised loss
+            prev_denoised, z_prev = net(prev_frame_hat, None, z_after, sigma_n_1)
             loss_prev = torch.mean((prev_denoised - prev_frame) ** 2)
             loss_curr = torch.mean((curr_denoised - curr_frame) ** 2)
             loss_after = torch.mean((after_denoised - after_frame) ** 2)
